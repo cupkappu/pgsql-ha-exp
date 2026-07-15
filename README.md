@@ -23,6 +23,89 @@
 | `tests/` | smoke、程序故障、主機故障、witness、fencing 測試 |
 | `deploy/lan/` | 三種區域網路部署範本 |
 | `standalone-compose-example/` | 可分別複製到三台主機的 Compose 檔 |
+| `demo/` | 單一 Docker daemon 演示環境 |
+
+## Docker-only 演示
+
+`demo/compose.yml` 在一個 Docker daemon 內啟動：
+
+```text
+etcd1 + etcd2 + etcd3
+pg1 + pg2
+HAProxy
+Adminer
+init
+```
+
+啟動：
+
+```bash
+make demo-up
+```
+
+入口與憑證：
+
+| 項目 | 值 |
+|---|---|
+| Adminer | `http://127.0.0.1:18080` |
+| PostgreSQL 寫入 | `127.0.0.1:15432` |
+| PostgreSQL replica 讀取 | `127.0.0.1:15433` |
+| pg1 Patroni REST | `http://127.0.0.1:18108/patroni` |
+| pg2 Patroni REST | `http://127.0.0.1:18109/patroni` |
+| System | `PostgreSQL` |
+| Server | `haproxy:5000` |
+| User | `app` |
+| Password | `apppass` |
+| Database | `appdb` |
+
+`init` 建立 `app`、`appdb`、`ha_test`、`ha_test_summary`，並寫入 10 筆 `seed` 資料。
+
+查看狀態：
+
+```bash
+make demo-status
+```
+
+故障前寫入：
+
+```sql
+INSERT INTO ha_test (phase, payload)
+VALUES ('before-failover', 'before-' || gen_random_uuid())
+RETURNING *;
+```
+
+停止 primary 並等待另一節點提升：
+
+```bash
+make demo-failover
+```
+
+故障後寫入與查詢：
+
+```sql
+INSERT INTO ha_test (phase, payload)
+VALUES ('after-failover', 'after-' || gen_random_uuid())
+RETURNING *;
+
+SELECT * FROM ha_test ORDER BY id;
+SELECT * FROM ha_test_summary ORDER BY first_write;
+SELECT inet_server_addr(), pg_is_in_recovery(), now();
+```
+
+啟動兩個 PostgreSQL 節點：
+
+```bash
+make demo-rejoin
+```
+
+停止容器與刪除全部 demo volume：
+
+```bash
+make demo-down
+make demo-clean
+```
+
+此環境演示容器程序故障轉移。全部容器共用同一 Docker host。
 
 ## 實驗一：Patroni
 

@@ -1,13 +1,15 @@
 LIMA_INSTANCE ?= fabric-clab
 PROJECT_DIR := $(CURDIR)
 LIMA_RUN = limactl shell $(LIMA_INSTANCE) -- bash -lc 'cd "$(PROJECT_DIR)" && sudo
+DEMO_COMPOSE = docker compose -f demo/compose.yml
 
 .PHONY: \
 	up status smoke failover host-failover witness-failure test down clean \
 	patroni-up patroni-status patroni-smoke patroni-process-failover \
 	patroni-host-failover patroni-witness-failure patroni-test patroni-down patroni-clean \
 	pcmk-up pcmk-status pcmk-smoke pcmk-failover pcmk-test pcmk-down pcmk-clean \
-	test-all status-all clean-all deploy-lint
+	test-all status-all clean-all deploy-lint \
+	demo-up demo-status demo-failover demo-rejoin demo-down demo-clean
 
 # Default aliases use the Patroni + external etcd witness design.
 up: patroni-up
@@ -74,3 +76,25 @@ clean-all: patroni-clean pcmk-clean
 
 deploy-lint:
 	bash tests/deploy-templates.sh
+
+demo-up:
+	$(DEMO_COMPOSE) up -d --build
+
+demo-status:
+	$(DEMO_COMPOSE) ps
+	@for port in 18108 18109; do \
+		curl -fsS "http://127.0.0.1:$$port/patroni" || true; \
+		printf '\n'; \
+	done
+
+demo-failover:
+	bash scripts/demo-failover.sh
+
+demo-rejoin:
+	$(DEMO_COMPOSE) up -d pg1 pg2
+
+demo-down:
+	$(DEMO_COMPOSE) down
+
+demo-clean:
+	$(DEMO_COMPOSE) down -v --remove-orphans

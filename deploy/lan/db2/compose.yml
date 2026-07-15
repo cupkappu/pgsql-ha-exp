@@ -21,8 +21,8 @@ services:
 
   patroni:
     build:
-      context: ../../..
-      dockerfile: images/patroni/Dockerfile
+      context: ../../../images/patroni
+      dockerfile: Dockerfile
     image: pgsql-ha-patroni:local
     restart: unless-stopped
     network_mode: host

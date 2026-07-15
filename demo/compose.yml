@@ -1,0 +1,150 @@
+name: pgsql-ha-demo
+
+x-etcd-service: &etcd-service
+  image: gcr.io/etcd-development/etcd:v3.5.21
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
+x-patroni-service: &patroni-service
+  build:
+    context: ../images/patroni
+    dockerfile: Dockerfile
+  image: pgsql-ha-patroni:demo
+  restart: unless-stopped
+  environment:
+    PATRONI_SUPERUSER_PASSWORD: postgres
+    PATRONI_REPLICATION_PASSWORD: replicator
+  depends_on:
+    etcd1:
+      condition: service_healthy
+    etcd2:
+      condition: service_healthy
+    etcd3:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8008/patroni"]
+    interval: 3s
+    timeout: 2s
+    retries: 40
+
+services:
+  etcd1:
+    <<: *etcd-service
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd1
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd1:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd1:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=pgsql-ha-demo-etcd
+      - --auto-compaction-retention=1
+      - --auto-compaction-mode=periodic
+    volumes:
+      - etcd1-data:/etcd-data
+
+  etcd2:
+    <<: *etcd-service
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd2
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd2:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd2:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=pgsql-ha-demo-etcd
+      - --auto-compaction-retention=1
+      - --auto-compaction-mode=periodic
+    volumes:
+      - etcd2-data:/etcd-data
+
+  etcd3:
+    <<: *etcd-service
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd3
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd3:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd3:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=pgsql-ha-demo-etcd
+      - --auto-compaction-retention=1
+      - --auto-compaction-mode=periodic
+    volumes:
+      - etcd3-data:/etcd-data
+
+  pg1:
+    <<: *patroni-service
+    hostname: pg1
+    volumes:
+      - pg1-data:/var/lib/postgresql/data
+      - ./patroni-pg1.yml:/etc/patroni.yml:ro
+    command: ["/etc/patroni.yml"]
+    ports:
+      - "127.0.0.1:18108:8008"
+
+  pg2:
+    <<: *patroni-service
+    hostname: pg2
+    volumes:
+      - pg2-data:/var/lib/postgresql/data
+      - ./patroni-pg2.yml:/etc/patroni.yml:ro
+    command: ["/etc/patroni.yml"]
+    ports:
+      - "127.0.0.1:18109:8008"
+
+  haproxy:
+    image: haproxy:3.0-alpine
+    restart: unless-stopped
+    depends_on:
+      pg1:
+        condition: service_healthy
+      pg2:
+        condition: service_healthy
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "127.0.0.1:15432:5000"
+      - "127.0.0.1:15433:5001"
+
+  adminer:
+    image: adminer:4.8.1-standalone
+    restart: unless-stopped
+    depends_on:
+      - haproxy
+    environment:
+      ADMINER_DEFAULT_SERVER: haproxy:5000
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  init:
+    image: postgres:16-bookworm
+    restart: "no"
+    depends_on:
+      - haproxy
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./init.sh:/demo/init.sh:ro
+      - ./init.sql:/demo/init.sql:ro
+    entrypoint: ["bash", "/demo/init.sh"]
+
+volumes:
+  etcd1-data:
+  etcd2-data:
+  etcd3-data:
+  pg1-data:
+  pg2-data:
