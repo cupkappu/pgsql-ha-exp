@@ -1,0 +1,62 @@
+scope: pgsql-ha
+namespace: /service/
+name: pg2
+
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: 192.168.50.12:8008
+
+etcd3:
+  hosts:
+    - 192.168.50.11:2379
+    - 192.168.50.12:2379
+    - 192.168.50.13:2379
+
+bootstrap:
+  dcs:
+    ttl: 12
+    loop_wait: 2
+    retry_timeout: 4
+    maximum_lag_on_failover: 1048576
+    synchronous_mode: true
+    synchronous_mode_strict: false
+    synchronous_node_count: 1
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        wal_log_hints: "on"
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 256MB
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+  pg_hba:
+    - host replication replicator 192.168.50.0/24 scram-sha-256
+    - host all all 192.168.50.0/24 scram-sha-256
+
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: 192.168.50.12:5432
+  data_dir: /var/lib/postgresql/data/pgdata
+  bin_dir: /usr/lib/postgresql/16/bin
+  authentication:
+    superuser:
+      username: postgres
+    replication:
+      username: replicator
+  parameters:
+    password_encryption: scram-sha-256
+    unix_socket_directories: /var/run/postgresql
+
+watchdog:
+  mode: off
+
+tags:
+  clonefrom: true
+  noloadbalance: false
+  nofailover: false
+  nosync: false

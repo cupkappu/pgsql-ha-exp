@@ -1,0 +1,42 @@
+services:
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.5.21
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ${ETCD_DATA_DIR:?set ETCD_DATA_DIR}:/etcd-data
+    command:
+      - /usr/local/bin/etcd
+      - --name=${ETCD_NAME:?set ETCD_NAME}
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://${NODE_IP:?set NODE_IP}:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://${NODE_IP}:2380
+      - --initial-cluster=${ETCD_INITIAL_CLUSTER:?set ETCD_INITIAL_CLUSTER}
+      - --initial-cluster-state=new
+      - --initial-cluster-token=${ETCD_CLUSTER_TOKEN:?set ETCD_CLUSTER_TOKEN}
+      - --auto-compaction-retention=1
+      - --auto-compaction-mode=periodic
+
+  patroni:
+    build:
+      context: ../../..
+      dockerfile: images/patroni/Dockerfile
+    image: pgsql-ha-patroni:local
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      PATRONI_SUPERUSER_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD}
+      PATRONI_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:?set POSTGRES_REPLICATION_PASSWORD}
+    volumes:
+      - ${PGDATA_DIR:?set PGDATA_DIR}:/var/lib/postgresql/data
+      - ./patroni.yml:/etc/patroni.yml:ro
+    command: [/etc/patroni.yml]
+
+  haproxy:
+    image: haproxy:3.0-alpine
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ../haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro

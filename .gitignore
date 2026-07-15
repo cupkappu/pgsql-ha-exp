@@ -1,0 +1,40 @@
+# macOS and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Agent and local workspace state
+.pi-subagents/
+.state/
+.worktrees/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environments and dependencies
+.venv/
+venv/
+node_modules/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.pid
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+secrets/
+**/secrets/
+*.key
+*.pem
+
+# Local database and etcd state
+**/pgdata/
+**/etcd-data/

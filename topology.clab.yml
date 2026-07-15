@@ -1,0 +1,64 @@
+name: pgsql-ha
+
+mgmt:
+  network: pgsql-ha-mgmt
+  ipv4-subnet: 172.31.100.0/24
+
+# Each node runs its own Docker daemon. The point-to-point eth1 link is the
+# simulated physical network used by etcd, Patroni and PostgreSQL replication.
+topology:
+  defaults:
+    kind: linux
+    image: pgsql-ha-dind:local
+    restart-policy: unless-stopped
+    env:
+      DOCKER_TLS_CERTDIR: ""
+    binds:
+      - .:/lab:ro
+
+  nodes:
+    host1:
+      mgmt-ipv4: 172.31.100.11
+      binds:
+        - /var/lib/pgsql-ha-exp/host1-docker:/var/lib/docker
+      ports:
+        - 15000:5000
+        - 15001:5001
+        - 18008:8008
+      exec:
+        - ip addr replace 10.10.0.1/30 dev eth1
+        - ip link set eth1 up
+
+    host2:
+      mgmt-ipv4: 172.31.100.12
+      binds:
+        - /var/lib/pgsql-ha-exp/host2-docker:/var/lib/docker
+      ports:
+        - 25000:5000
+        - 25001:5001
+        - 28008:8008
+      exec:
+        - ip addr replace 10.10.0.2/30 dev eth1
+        - ip link set eth1 up
+
+    witness:
+      image: gcr.io/etcd-development/etcd:v3.5.21
+      mgmt-ipv4: 172.31.100.13
+      binds:
+        - /var/lib/pgsql-ha-exp/witness-etcd:/etcd-data
+      cmd: >-
+        /usr/local/bin/etcd
+        --name etcd3
+        --data-dir /etcd-data
+        --listen-client-urls http://0.0.0.0:2379
+        --advertise-client-urls http://172.31.100.13:2379
+        --listen-peer-urls http://0.0.0.0:2380
+        --initial-advertise-peer-urls http://172.31.100.13:2380
+        --initial-cluster etcd1=http://172.31.100.11:2380,etcd2=http://172.31.100.12:2380,etcd3=http://172.31.100.13:2380
+        --initial-cluster-state new
+        --initial-cluster-token pgsql-ha-etcd
+        --auto-compaction-retention 1
+        --auto-compaction-mode periodic
+
+  links:
+    - endpoints: ["host1:eth1", "host2:eth1"]

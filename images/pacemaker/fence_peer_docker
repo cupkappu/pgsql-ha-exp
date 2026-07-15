@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+import json
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+SOCKET = "unix:///var/run/docker.sock"
+PREFIX = "clab-pgsql-pcmk-"
+
+
+def metadata() -> str:
+    return """<?xml version=\"1.0\" ?>
+<resource-agent name=\"fence_peer_docker\" shortdesc=\"Fence a containerlab node through the outer Docker daemon\">
+  <longdesc>Experiment fence agent that treats the Lima Docker daemon as the out-of-band power controller for the two simulated database servers.</longdesc>
+  <vendor-url>https://github.com/ClusterLabs/fence-agents</vendor-url>
+  <parameters>
+    <parameter name=\"action\" unique=\"0\" required=\"0\"><content type=\"string\" default=\"reboot\"/></parameter>
+    <parameter name=\"plug\" unique=\"1\" required=\"0\"><content type=\"string\"/></parameter>
+    <parameter name=\"power_timeout\" unique=\"0\" required=\"0\"><content type=\"second\" default=\"20\"/></parameter>
+  </parameters>
+  <actions>
+    <action name=\"on\" timeout=\"30\"/>
+    <action name=\"off\" timeout=\"30\"/>
+    <action name=\"reboot\" timeout=\"60\"/>
+    <action name=\"status\" timeout=\"20\"/>
+    <action name=\"monitor\" timeout=\"20\"/>
+    <action name=\"list\" timeout=\"20\"/>
+    <action name=\"list-status\" timeout=\"20\"/>
+    <action name=\"metadata\" timeout=\"5\"/>
+    <action name=\"validate-all\" timeout=\"20\"/>
+  </actions>
+</resource-agent>
+"""
+
+
+def read_options() -> dict[str, str]:
+    options: dict[str, str] = {}
+    if not sys.stdin.isatty():
+        for raw in sys.stdin:
+            line = raw.strip()
+            if not line or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            options[key.replace("-", "_")] = value
+
+    args = iter(sys.argv[1:])
+    for arg in args:
+        if arg in ("-o", "--action"):
+            options["action"] = next(args)
+        elif arg.startswith("--action="):
+            options["action"] = arg.split("=", 1)[1]
+        elif arg in ("-n", "--plug", "--port"):
+            options["plug"] = next(args)
+        elif arg.startswith("--plug=") or arg.startswith("--port="):
+            options["plug"] = arg.split("=", 1)[1]
+        elif arg in ("-h", "--help"):
+            options["action"] = "metadata"
+    return options
+
+
+def docker(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["docker", "--host", SOCKET, *args],
+        check=check,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def running(name: str) -> bool:
+    result = docker("inspect", "-f", "{{.State.Running}}", name, check=False)
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def mark_rejoin(name: str) -> None:
+    docker(
+        "exec",
+        name,
+        "bash",
+        "-lc",
+        "install -d -o postgres -g postgres /var/lib/postgresql && touch /var/lib/postgresql/rejoin-required",
+        check=False,
+    )
+
+
+def wait_state(name: str, expected: bool, timeout: int) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if running(name) is expected:
+            return True
+        time.sleep(1)
+    return False
+
+
+def list_nodes(with_status: bool) -> int:
+    result = docker("ps", "-a", "--format", "{{json .}}", check=False)
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr)
+        return 1
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        row = json.loads(line)
+        name = row.get("Names", "")
+        if not name.startswith(PREFIX):
+            continue
+        if with_status:
+            state = "on" if running(name) else "off"
+            print(f"{name},{state}")
+        else:
+            print(f"{name},Containerlab database node")
+    return 0
+
+
+def main() -> int:
+    options = read_options()
+    action = options.get("action", "reboot")
+    plug = options.get("plug") or options.get("port")
+    timeout = int(options.get("power_timeout", options.get("power-timeout", "20")))
+
+    if action in ("metadata", "manpage"):
+        print(metadata())
+        return 0
+    if action == "monitor":
+        return docker("version", check=False).returncode
+    if action == "list":
+        return list_nodes(False)
+    if action == "list-status":
+        return list_nodes(True)
+    if action == "validate-all":
+        return docker("version", check=False).returncode
+    if not plug:
+        print("plug is required", file=sys.stderr)
+        return 1
+
+    if action == "status":
+        return 0 if running(plug) else 2
+    if action == "off":
+        mark_rejoin(plug)
+        docker("stop", "--time", "1", plug, check=False)
+        return 0 if wait_state(plug, False, timeout) else 1
+    if action == "on":
+        docker("start", plug, check=False)
+        return 0 if wait_state(plug, True, timeout) else 1
+    if action == "reboot":
+        mark_rejoin(plug)
+        docker("stop", "--time", "1", plug, check=False)
+        if not wait_state(plug, False, timeout):
+            return 1
+        docker("start", plug, check=False)
+        return 0 if wait_state(plug, True, timeout) else 1
+
+    print(f"unsupported action: {action}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

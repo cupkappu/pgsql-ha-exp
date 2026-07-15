@@ -1,0 +1,36 @@
+name: pgsql-pcmk
+
+mgmt:
+  network: pgsql-pcmk-mgmt
+  ipv4-subnet: 172.31.110.0/24
+
+topology:
+  defaults:
+    kind: linux
+    image: pgsql-ha-pacemaker:local
+    restart-policy: unless-stopped
+    env:
+      container: docker
+    binds:
+      - .:/lab:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config/pacemaker/corosync.conf:/etc/corosync/corosync.conf:ro
+
+  nodes:
+    db1:
+      mgmt-ipv4: 172.31.110.11
+      binds:
+        - /var/lib/pgsql-ha-exp-pcmk/db1-postgresql:/var/lib/postgresql
+        - /var/lib/pgsql-ha-exp-pcmk/db1-pacemaker:/var/lib/pacemaker
+        - /var/lib/pgsql-ha-exp-pcmk/db1-corosync:/var/lib/corosync
+      ports:
+        - 15432:5432
+
+    db2:
+      mgmt-ipv4: 172.31.110.12
+      binds:
+        - /var/lib/pgsql-ha-exp-pcmk/db2-postgresql:/var/lib/postgresql
+        - /var/lib/pgsql-ha-exp-pcmk/db2-pacemaker:/var/lib/pacemaker
+        - /var/lib/pgsql-ha-exp-pcmk/db2-corosync:/var/lib/corosync
+      ports:
+        - 25432:5432
