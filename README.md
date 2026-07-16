@@ -1,6 +1,6 @@
 # PostgreSQL 兩主機 HA 實驗
 
-本倉庫包含兩套 PostgreSQL 16 高可用實驗、三種區域網路部署範本及一套獨立 Compose 範例。
+本倉庫包含三套 PostgreSQL 16 主備與高可用實驗、三種區域網路部署範本及一套獨立 Compose 範例。
 
 ## 狀態
 
@@ -8,8 +8,9 @@
 |---|---|---|---|
 | Patroni | PostgreSQL、Patroni、三成員 etcd、HAProxy | 完成 | `make patroni-test` |
 | Pacemaker | PostgreSQL、Corosync、Pacemaker、PAF、STONITH、VIP | 完成 | `make pcmk-test` |
+| Manual | PostgreSQL streaming replication、手動 promote、pg_basebackup rejoin | 完成 | `make manual-test` |
 
-`make test-all` 執行兩套驗證。
+`make test-all` 執行三套驗證。
 
 ## 目錄
 
@@ -17,6 +18,7 @@
 |---|---|
 | `topology.clab.yml` | Patroni 實驗拓撲 |
 | `topology-pacemaker.clab.yml` | Pacemaker 實驗拓撲 |
+| `topology-manual.clab.yml` | 雙機手動主備實驗拓撲 |
 | `config/` | 實驗設定 |
 | `images/` | 實驗映像 |
 | `scripts/` | 建立、狀態、停止、清理及節點恢復 |
@@ -24,6 +26,7 @@
 | `deploy/lan/` | 三種區域網路部署範本 |
 | `standalone-compose-example/` | 可分別複製到三台主機的 Compose 檔 |
 | `demo/` | 單一 Docker daemon 演示環境 |
+| `manual-postgresql-primary-standby.zh-Hant.md` | 雙機主備與手動切換指南 |
 
 ## Docker-only 演示
 

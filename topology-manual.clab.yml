@@ -1,0 +1,30 @@
+name: pgsql-manual
+
+mgmt:
+  network: pgsql-manual-mgmt
+  ipv4-subnet: 172.31.120.0/24
+
+topology:
+  defaults:
+    kind: linux
+    image: pgsql-ha-dind:local
+    restart-policy: unless-stopped
+    env:
+      DOCKER_TLS_CERTDIR: ""
+
+  nodes:
+    db1:
+      mgmt-ipv4: 172.31.120.11
+      binds:
+        - /var/lib/pgsql-ha-manual/db1-docker:/var/lib/docker
+        - /var/lib/pgsql-ha-manual/db1-postgresql:/var/lib/pgsql
+      ports:
+        - 35432:5432
+
+    db2:
+      mgmt-ipv4: 172.31.120.12
+      binds:
+        - /var/lib/pgsql-ha-manual/db2-docker:/var/lib/docker
+        - /var/lib/pgsql-ha-manual/db2-postgresql:/var/lib/pgsql
+      ports:
+        - 45432:5432
