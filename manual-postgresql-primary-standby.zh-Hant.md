@@ -1,5 +1,36 @@
 # 兩台 PostgreSQL 主備與手動切換實驗
 
+本方案提供兩個執行入口：
+
+| 入口 | 用途 | 命令 |
+|---|---|---|
+| containerlab | 在 Linux VM 內模擬兩台獨立 Docker 主機 | `make manual-test` |
+| Docker Compose | 在單一 Docker daemon 內快速演示雙節點切換 | `make manual-demo-test` |
+
+Docker Compose 的完整繁體中文操作說明位於 [`manual-demo/README.md`](manual-demo/README.md)。根 [`README.md`](README.md) 另有「將現有 Docker Compose 單節點擴展為雙機手動主備」指南，適用於 host1 已保存正式資料、host2 準備接收 physical base backup 的情境。
+
+該遷移指南包含：
+
+```text
+現有 primary 的 WAL 與 pg_hba.conf 設定
+replication role 與 physical replication slot
+從 host1 對 host2 執行 pg_basebackup -R
+計畫內 LSN 對齊與手動 promote
+primary 故障後的端點切換
+舊 primary 從新 primary 重新建立為 standby
+```
+
+單機 Compose 演示快速啟動：
+
+```bash
+make manual-demo-up
+make manual-demo-status
+make manual-demo-switch FROM=db1 TO=db2
+make manual-demo-rejoin NODE=db1
+```
+
+以下章節說明兩台獨立 Docker 主機的 containerlab 實驗。
+
 ## 拓撲
 
 ```text

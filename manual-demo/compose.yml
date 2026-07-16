@@ -1,0 +1,96 @@
+name: pgsql-manual-demo
+
+x-postgres-common: &postgres-common
+  image: ${POSTGRES_IMAGE:-postgres:16-bookworm}
+  restart: unless-stopped
+  environment:
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    POSTGRES_DB: ${POSTGRES_DB:-appdb}
+    PGDATA: /var/lib/postgresql/data/pgdata
+  command:
+    - postgres
+    - -c
+    - listen_addresses=*
+    - -c
+    - wal_level=replica
+    - -c
+    - max_wal_senders=10
+    - -c
+    - max_replication_slots=10
+    - -c
+    - wal_log_hints=on
+    - -c
+    - hot_standby=on
+    - -c
+    - wal_keep_size=256MB
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+    interval: 2s
+    timeout: 3s
+    retries: 45
+  networks:
+    manual:
+
+services:
+  db1:
+    <<: *postgres-common
+    container_name: pgsql-manual-demo-db1
+    ports:
+      - "127.0.0.1:${DB1_PORT:-35432}:5432"
+    volumes:
+      - db1-data:/var/lib/postgresql/data
+    networks:
+      manual:
+        ipv4_address: 172.31.121.11
+
+  db2:
+    <<: *postgres-common
+    container_name: pgsql-manual-demo-db2
+    ports:
+      - "127.0.0.1:${DB2_PORT:-45432}:5432"
+    volumes:
+      - db2-data:/var/lib/postgresql/data
+    networks:
+      manual:
+        ipv4_address: 172.31.121.12
+
+  clone-db1-from-db2:
+    image: ${POSTGRES_IMAGE:-postgres:16-bookworm}
+    profiles: ["tools"]
+    entrypoint: ["/bin/bash", "/opt/manual-demo/clone.sh"]
+    environment:
+      SOURCE_HOST: db2
+      TARGET_NAME: db1
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:-replicator}
+    volumes:
+      - db1-data:/var/lib/postgresql/data
+      - ./clone.sh:/opt/manual-demo/clone.sh:ro
+    networks:
+      manual:
+
+  clone-db2-from-db1:
+    image: ${POSTGRES_IMAGE:-postgres:16-bookworm}
+    profiles: ["tools"]
+    entrypoint: ["/bin/bash", "/opt/manual-demo/clone.sh"]
+    environment:
+      SOURCE_HOST: db1
+      TARGET_NAME: db2
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD:-replicator}
+    volumes:
+      - db2-data:/var/lib/postgresql/data
+      - ./clone.sh:/opt/manual-demo/clone.sh:ro
+    networks:
+      manual:
+
+networks:
+  manual:
+    name: pgsql-manual-demo-network
+    ipam:
+      config:
+        - subnet: 172.31.121.0/24
+
+volumes:
+  db1-data:
+    name: pgsql-manual-demo-db1-data
+  db2-data:
+    name: pgsql-manual-demo-db2-data

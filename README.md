@@ -1,6 +1,6 @@
 # PostgreSQL 兩主機 HA 實驗
 
-本倉庫包含三套 PostgreSQL 16 主備與高可用實驗、三種區域網路部署範本及一套獨立 Compose 範例。
+本倉庫包含三套 PostgreSQL 16 主備與高可用實驗、三種區域網路部署範本、兩套單機 Docker Compose 演示及一套分主機 Compose 範例。
 
 ## 狀態
 
@@ -8,7 +8,7 @@
 |---|---|---|---|
 | Patroni | PostgreSQL、Patroni、三成員 etcd、HAProxy | 完成 | `make patroni-test` |
 | Pacemaker | PostgreSQL、Corosync、Pacemaker、PAF、STONITH、VIP | 完成 | `make pcmk-test` |
-| Manual | PostgreSQL streaming replication、手動 promote、pg_basebackup rejoin | 完成 | `make manual-test` |
+| Manual | PostgreSQL streaming replication、手動 promote、pg_basebackup rejoin | 完成 | `make manual-test`、`make manual-demo-test` |
 
 `make test-all` 執行三套驗證。
 
@@ -24,9 +24,10 @@
 | `scripts/` | 建立、狀態、停止、清理及節點恢復 |
 | `tests/` | smoke、程序故障、主機故障、witness、fencing 測試 |
 | `deploy/lan/` | 三種區域網路部署範本 |
-| `standalone-compose-example/` | 可分別複製到三台主機的 Compose 檔 |
-| `demo/` | 單一 Docker daemon 演示環境 |
-| `manual-postgresql-primary-standby.zh-Hant.md` | 雙機主備與手動切換指南 |
+| `standalone-compose-example/` | 可分別複製到三台主機的 Patroni Compose 檔 |
+| `demo/` | Patroni 單一 Docker daemon 演示環境 |
+| `manual-demo/` | 雙節點手動切換 Compose 演示及繁體中文 README |
+| `manual-postgresql-primary-standby.zh-Hant.md` | 兩台實機與 containerlab 手動切換指南 |
 
 ## Docker-only 演示
 
@@ -109,6 +110,49 @@ make demo-clean
 ```
 
 此環境演示容器程序故障轉移。全部容器共用同一 Docker host。
+
+## 雙節點手動切換 Compose 演示
+
+`manual-demo/compose.yml` 在單一 Docker daemon 內執行兩個 PostgreSQL 16 節點。首次啟動時，db1 為 primary，db2 透過 `pg_basebackup -R` 建立為 standby。
+
+```text
+db1  127.0.0.1:35432  primary
+db2  127.0.0.1:45432  standby
+```
+
+啟動及驗收：
+
+```bash
+make manual-demo-up
+make manual-demo-status
+make manual-demo-smoke
+make manual-demo-test
+```
+
+計畫內切換與舊節點重建：
+
+```bash
+make manual-demo-switch FROM=db1 TO=db2
+make manual-demo-rejoin NODE=db1
+```
+
+primary 故障後提升 standby：
+
+```bash
+docker compose --env-file manual-demo/.env.example \
+  -f manual-demo/compose.yml stop db1
+make manual-demo-promote NODE=db2
+make manual-demo-rejoin NODE=db1
+```
+
+停止與清理：
+
+```bash
+make manual-demo-down
+make manual-demo-clean
+```
+
+完整操作流程、資料 volume、角色判斷、故障處理與一致性範圍位於 [`manual-demo/README.md`](manual-demo/README.md)。
 
 ## 實驗一：Patroni
 
@@ -251,6 +295,460 @@ make pcmk-clean
 ```
 
 `make pcmk-down` 保留資料。`make pcmk-clean` 刪除以上目錄。
+
+## 實驗三：雙機主備與手動切換
+
+此方案只執行 PostgreSQL streaming replication。角色提升、應用程式端點切換及舊節點重建均由操作人員執行。
+
+### containerlab 雙主機實驗
+
+```text
+Lima VM: fabric-clab
+└── containerlab: pgsql-manual
+    ├── db1 / 172.31.120.11 / client 127.0.0.1:35432
+    └── db2 / 172.31.120.12 / client 127.0.0.1:45432
+```
+
+兩個節點各自執行獨立 Docker daemon。首次啟動建立 db1 primary 與 db2 standby。
+
+```bash
+make manual-up
+make manual-status
+make manual-smoke
+make manual-switch FROM=db1 TO=db2
+make manual-rejoin NODE=db1
+make manual-failover
+make manual-test
+make manual-down
+make manual-clean
+```
+
+`manual-switch` 先停止原 primary，再提升 standby。`manual-promote` 用於原 primary 主機已停止的故障情境。`manual-rejoin` 會清除指定節點的舊資料，並從目前 primary 執行 `pg_basebackup -R`。
+
+### 單機 Docker Compose 演示
+
+`manual-demo/compose.yml` 使用同一 Docker daemon 啟動 db1 與 db2，操作語義與雙主機實驗一致。
+
+```bash
+make manual-demo-lint
+make manual-demo-up
+make manual-demo-status
+make manual-demo-smoke
+make manual-demo-switch FROM=db1 TO=db2
+make manual-demo-rejoin NODE=db1
+make manual-demo-failover
+make manual-demo-test
+make manual-demo-down
+make manual-demo-clean
+```
+
+Compose 演示使用以下 named volumes：
+
+```text
+pgsql-manual-demo-db1-data
+pgsql-manual-demo-db2-data
+```
+
+完整流程位於 [`manual-demo/README.md`](manual-demo/README.md)。兩台獨立 Docker 主機的操作位於 [`manual-postgresql-primary-standby.zh-Hant.md`](manual-postgresql-primary-standby.zh-Hant.md)。
+
+### 將現有 Docker Compose 單節點擴展為雙機手動主備
+
+以下流程適用於這種現況：
+
+```text
+host1  192.168.50.11  已由 Docker Compose 執行 PostgreSQL 16，保存現有資料
+host2  192.168.50.12  已安裝 Docker Compose，準備建立 standby
+```
+
+完成後的角色：
+
+```text
+正常狀態    host1 primary  running    host2 standby  running    app -> host1
+故障切換後  host1 stopped  or fenced  host2 primary  running    app -> host2
+重新加入後  host1 standby  running    host2 primary  running    app -> host2
+```
+
+範例假設 Compose service 名稱為 `postgres`，PostgreSQL superuser 為 `postgres`，兩台主機使用相同的 PostgreSQL major version、extension 套件及 Compose volume 掛載方式。請將 IP、service 名稱、資料庫名稱與密碼替換為實際值。
+
+#### 1. 記錄現有節點
+
+在 host1：
+
+```bash
+cd /opt/your-postgres-stack
+
+docker compose ps
+docker compose config
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c 'SELECT version();'
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c 'SHOW data_directory;'
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c 'SHOW config_file;'
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c 'SHOW hba_file;'
+
+docker inspect "$(docker compose ps -q postgres)" \
+  --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}'
+```
+
+執行一次可恢復的 PostgreSQL 備份，並記錄目前 image tag、Compose 檔、環境檔及 volume 位置。物理複寫不取代備份。
+
+#### 2. 讓 host1 接受複寫連線
+
+現有 Compose service 需要把 PostgreSQL port 發布到區域網路。保留原有 image、environment 與 volume，只加入或確認以下設定：
+
+```yaml
+services:
+  postgres:
+    ports:
+      - "192.168.50.11:5432:5432"
+```
+
+在 host1 設定 PostgreSQL：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres <<'SQL'
+ALTER SYSTEM SET listen_addresses = '*';
+ALTER SYSTEM SET wal_level = 'replica';
+ALTER SYSTEM SET max_wal_senders = '10';
+ALTER SYSTEM SET max_replication_slots = '10';
+ALTER SYSTEM SET wal_keep_size = '512MB';
+ALTER SYSTEM SET hot_standby = 'on';
+SQL
+```
+
+建立複寫帳戶：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres <<'SQL'
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'replicator') THEN
+    CREATE ROLE replicator LOGIN REPLICATION;
+  END IF;
+END
+$$;
+ALTER ROLE replicator PASSWORD 'CHANGE_ME_REPLICATION_PASSWORD';
+SQL
+```
+
+將 host2 加入 host1 的 `pg_hba.conf`：
+
+```bash
+docker compose exec -T postgres bash -ceu '
+  superuser="${POSTGRES_USER:-postgres}"
+  hba="$(psql -U "$superuser" -d postgres -Atc "SHOW hba_file")"
+  grep -q "manual standby host2" "$hba" || cat >> "$hba" <<"HBA"
+# manual standby host2
+host replication replicator 192.168.50.12/32 scram-sha-256
+HBA
+'
+```
+
+重新啟動 PostgreSQL，使 `listen_addresses`、WAL 與 slot 設定生效：
+
+```bash
+docker compose up -d postgres
+docker compose restart postgres
+
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  "SELECT name, setting, source, sourcefile
+     FROM pg_settings
+    WHERE name IN
+   ('listen_addresses','wal_level','max_wal_senders','max_replication_slots','wal_keep_size','hot_standby');"
+```
+
+若 `source` 顯示 `command line`，Compose 的 `command:` 或 entrypoint 參數正在覆蓋 `ALTER SYSTEM`。請在兩台主機的 Compose 檔同步修改該參數，再執行 `docker compose up -d postgres`。
+
+將 host1 的 5432/TCP 來源限制為 host2。Docker published port 可能繞過一般 UFW INPUT 規則；來源限制應配置在上游防火牆、Docker `DOCKER-USER` chain 或等效 nftables forwarding chain。`pg_hba.conf` 同時限制 replication user 的來源位址。
+
+從 host2 確認網路可達：
+
+```bash
+nc -vz 192.168.50.11 5432
+```
+
+#### 3. 準備 host2 Compose
+
+將 host1 的 PostgreSQL service 定義複製到 host2。兩邊使用相同 image major version、`PGDATA`、volume destination、啟動參數及 extension 套件。host2 可以使用不同的 host bind-mount source。
+
+範例：
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "192.168.50.12:5432:5432"
+    volumes:
+      - /srv/postgresql/data:/var/lib/postgresql/data
+```
+
+`POSTGRES_DB`、`POSTGRES_PASSWORD` 與 `/docker-entrypoint-initdb.d` 只在空資料目錄初始化時執行。host2 將接收 host1 的完整物理副本，現有資料庫、角色與 schema 會一併複製。
+
+在 host2 停止 PostgreSQL：
+
+```bash
+cd /opt/your-postgres-stack
+docker compose stop postgres
+```
+
+host2 的目標 volume 若包含其他 PostgreSQL 資料，先備份或改用新的 volume。下一步會清除目標 `PGDATA`。
+
+#### 4. 從 host1 建立 host2 standby
+
+若先前執行過同名 slot 的失敗操作，在 host1 檢查 slot：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  "SELECT slot_name, slot_type, active, restart_lsn FROM pg_replication_slots;"
+```
+
+確認 `host2_slot` 沒有被任何 standby 使用後，清除該 inactive slot：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  "SELECT pg_drop_replication_slot(slot_name)
+     FROM pg_replication_slots
+    WHERE slot_name = 'host2_slot' AND active = false;"
+```
+
+在 host2 執行：
+
+```bash
+export REPLICATION_PASSWORD='CHANGE_ME_REPLICATION_PASSWORD'
+
+docker compose run --rm --no-deps \
+  -e PGPASSWORD="$REPLICATION_PASSWORD" \
+  --entrypoint bash postgres -ceu '
+    data="${PGDATA:-/var/lib/postgresql/data}"
+    install -d -o postgres -g postgres -m 0700 "$data"
+    find "$data" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    chown postgres:postgres "$data"
+    chmod 0700 "$data"
+
+    exec gosu postgres pg_basebackup \
+      -d "host=192.168.50.11 port=5432 user=replicator password=$PGPASSWORD application_name=host2" \
+      -D "$data" \
+      -Fp -Xs -P -R \
+      -C -S host2_slot
+  '
+```
+
+`-R` 建立 `standby.signal` 並寫入 `primary_conninfo`。`-C -S host2_slot` 在 host1 建立 physical replication slot。範例會把複寫密碼寫入 host2 的 `postgresql.auto.conf`；實際部署可改用受限權限的 passfile 或 secret 掛載。
+
+啟動 host2：
+
+```bash
+docker compose up -d postgres
+
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  'SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn();'
+```
+
+預期 `pg_is_in_recovery()` 為 `true`。
+
+在 host1 檢查複寫：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  "SELECT application_name, client_addr, state, sync_state,
+          pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn)::bigint AS lag_bytes
+     FROM pg_stat_replication;"
+```
+
+預期看到 `application_name=host2`、`state=streaming`。
+
+#### 5. 驗證現有資料會到達 host2
+
+在 host1 的 `postgres` database 建立測試資料：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres <<'SQL'
+CREATE TABLE IF NOT EXISTS manual_ha_probe (
+  id bigserial PRIMARY KEY,
+  payload text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO manual_ha_probe (payload)
+VALUES ('before-first-switch-' || clock_timestamp());
+SQL
+```
+
+在 host2 查詢：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  'SELECT * FROM manual_ha_probe ORDER BY id DESC LIMIT 5;'
+```
+
+#### 6. 計畫內從 host1 切到 host2
+
+先停止應用程式寫入。若應用程式也由 Compose 管理：
+
+```bash
+docker compose stop app
+```
+
+在 host1 取得切換 LSN：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c 'CHECKPOINT;'
+
+TARGET_LSN="$(docker compose exec -T postgres \
+  psql -U postgres -d postgres -Atc 'SELECT pg_switch_wal()')"
+
+printf 'target LSN: %s\n' "$TARGET_LSN"
+```
+
+在 host2 等待 replay 到該 LSN：
+
+```bash
+until [[ "$(docker compose exec -T postgres \
+  psql -U postgres -d postgres -Atc \
+  "SELECT COALESCE(pg_last_wal_replay_lsn() >= '${TARGET_LSN}'::pg_lsn, false)")" == t ]]; do
+  sleep 1
+done
+```
+
+在 host1 停止 PostgreSQL：
+
+```bash
+docker compose stop postgres
+```
+
+在 host2 提升：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  'SELECT pg_promote(true, 60);'
+
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  'SELECT pg_is_in_recovery();'
+```
+
+預期 `pg_is_in_recovery()` 為 `false`。將應用程式的 `DB_HOST`、DNS 或連線設定改為 `192.168.50.12`，再啟動應用程式。
+
+#### 7. host1 故障時手動提升 host2
+
+先確認 host1 已關機、PostgreSQL container 已停止，或 host1 已被網路與電源隔離。確認完成後，在 host2 執行：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  'SELECT pg_promote(true, 60);'
+```
+
+將應用程式端點改為 `192.168.50.12`。非同步複寫下，host1 突然失效前尚未送達 host2 的交易可能缺失。
+
+舊 host1 恢復時，先保持資料庫服務對應用程式網路不可達。不要直接使用舊資料啟動 PostgreSQL。
+
+#### 8. 將舊 host1 重建為 host2 的 standby
+
+在 host2 的 `pg_hba.conf` 允許 host1 連入。host2 的資料來自 host1 的 physical backup，通常已包含原有規則；仍需檢查：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c 'SHOW hba_file;'
+
+docker compose exec -T postgres bash -ceu '
+  superuser="${POSTGRES_USER:-postgres}"
+  hba="$(psql -U "$superuser" -d postgres -Atc "SHOW hba_file")"
+  grep -q "manual standby host1" "$hba" || cat >> "$hba" <<"HBA"
+# manual standby host1
+host replication replicator 192.168.50.11/32 scram-sha-256
+HBA
+  psql -U "$superuser" -d postgres -c "SELECT pg_reload_conf()"
+'
+```
+
+將 host2 的 5432/TCP 來源限制為 host1，使用與 host1 相同的 forwarding firewall 管理方式。
+
+若 `host1_slot` 已存在，先在 host2 檢查其 `active` 狀態。確認 slot 為 inactive 且沒有 standby 使用後，再執行刪除：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  "SELECT pg_drop_replication_slot(slot_name)
+     FROM pg_replication_slots
+    WHERE slot_name = 'host1_slot' AND active = false;"
+```
+
+在 host1 停止舊 container，並從 host2 重新建立資料：
+
+```bash
+docker compose stop postgres
+export REPLICATION_PASSWORD='CHANGE_ME_REPLICATION_PASSWORD'
+
+docker compose run --rm --no-deps \
+  -e PGPASSWORD="$REPLICATION_PASSWORD" \
+  --entrypoint bash postgres -ceu '
+    data="${PGDATA:-/var/lib/postgresql/data}"
+    install -d -o postgres -g postgres -m 0700 "$data"
+    find "$data" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    chown postgres:postgres "$data"
+    chmod 0700 "$data"
+
+    exec gosu postgres pg_basebackup \
+      -d "host=192.168.50.12 port=5432 user=replicator password=$PGPASSWORD application_name=host1" \
+      -D "$data" \
+      -Fp -Xs -P -R \
+      -C -S host1_slot
+  '
+
+docker compose up -d postgres
+```
+
+在 host1 確認 standby：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  'SELECT pg_is_in_recovery(), pg_last_wal_replay_lsn();'
+```
+
+在 host2 確認 streaming：
+
+```bash
+docker compose exec -T postgres \
+  psql -U postgres -d postgres -c \
+  'SELECT application_name, client_addr, state, sync_state FROM pg_stat_replication;'
+```
+
+此時角色為 host2 primary、host1 standby。之後可以用相同的 LSN 等待、停止、promote 與 `pg_basebackup` 流程切回 host1。
+
+#### 9. 操作限制
+
+- 兩台主機不執行 leader election。應用程式端點由操作人員切換。
+- 舊 primary 的停止或隔離狀態需要人工確認。舊 primary 重新上線前需要先重建為 standby。
+- `restart: unless-stopped` 可能在主機重啟後啟動舊 primary。故障切換後，舊主機應在隔離狀態下完成 rejoin。
+- physical replication 要求兩台 PostgreSQL major version 相同，host2 image 具備資料庫使用的 extension shared libraries。
+- `config_file`、`hba_file` 或 tablespace 若位於 `PGDATA` 之外，需要在 host2 建立相同掛載與路徑。tablespace 需要配合 `pg_basebackup --tablespace-mapping`。
+- replication slot 會保留 standby 尚未接收的 WAL。standby 長期離線時，需要檢查 `pg_replication_slots` 與磁碟使用量。
+- Compose 環境變數不會修改既有資料目錄中的角色、密碼或資料庫。既有叢集的變更需要使用 SQL 或設定檔完成。
+
+### 切換條件
+
+計畫內切換會等待 standby replay 到指定 WAL LSN，再停止 primary 並提升 standby。故障提升要求原 primary 已停止。舊 primary 恢復後直接執行 rejoin，由新 primary 重建資料。
+
+此方案使用非同步複寫。primary 突然失效時，尚未送達或尚未 replay 的交易可能遺失。雙節點環境沒有 quorum 與自動 fencing，操作人員需要確認舊 primary 已停止。
 
 ## 共用操作
 

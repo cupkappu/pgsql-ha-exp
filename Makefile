@@ -9,6 +9,7 @@ DEMO_COMPOSE = docker compose -f demo/compose.yml
 	patroni-host-failover patroni-witness-failure patroni-test patroni-down patroni-clean \
 	pcmk-up pcmk-status pcmk-smoke pcmk-failover pcmk-test pcmk-down pcmk-clean \
 	manual-up manual-status manual-smoke manual-switch manual-promote manual-rejoin manual-failover manual-test manual-down manual-clean \
+	manual-demo-lint manual-demo-up manual-demo-status manual-demo-smoke manual-demo-switch manual-demo-promote manual-demo-rejoin manual-demo-failover manual-demo-test manual-demo-down manual-demo-clean \
 	test-all status-all clean-all deploy-lint \
 	demo-up demo-status demo-failover demo-rejoin demo-down demo-clean
 
@@ -100,6 +101,41 @@ manual-down:
 
 manual-clean:
 	$(LIMA_RUN) bash scripts/manual-clean.sh'
+
+manual-demo-lint:
+	bash tests/manual-demo-static.sh
+
+manual-demo-up:
+	bash scripts/manual-demo-up.sh
+
+manual-demo-status:
+	bash scripts/manual-demo-status.sh
+
+manual-demo-smoke:
+	bash tests/manual-demo-smoke.sh
+
+manual-demo-switch:
+	@test -n "$(FROM)" && test -n "$(TO)" || (echo 'usage: make manual-demo-switch FROM=db1 TO=db2' >&2; exit 1)
+	bash scripts/manual-demo-switch.sh "$(FROM)" "$(TO)"
+
+manual-demo-promote:
+	@test -n "$(NODE)" || (echo 'usage: make manual-demo-promote NODE=db2' >&2; exit 1)
+	bash scripts/manual-demo-promote.sh "$(NODE)"
+
+manual-demo-rejoin:
+	@test -n "$(NODE)" || (echo 'usage: make manual-demo-rejoin NODE=db1' >&2; exit 1)
+	bash scripts/manual-demo-rejoin.sh "$(NODE)"
+
+manual-demo-failover:
+	bash tests/manual-demo-failover.sh
+
+manual-demo-test: manual-demo-lint manual-demo-up manual-demo-smoke manual-demo-failover
+
+manual-demo-down:
+	bash scripts/manual-demo-down.sh
+
+manual-demo-clean:
+	bash scripts/manual-demo-clean.sh
 
 status-all: patroni-status pcmk-status manual-status
 
