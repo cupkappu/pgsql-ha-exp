@@ -86,6 +86,26 @@ docker image inspect postgres:16-bookworm \
   --format '{{json .RepoDigests}}'
 ```
 
+此 Compose 同樣適用於以官方 PostgreSQL image 為基礎、預先安裝 extension 的衍生 image。以 PostgreSQL 17 與 pgvector 為例，只需修改 `.env`：
+
+```dotenv
+POSTGRES_IMAGE=pgvector/pgvector:pg17
+POSTGRES_PASSWORD=CHANGE_ME_POSTGRES_PASSWORD
+REPLICATION_PASSWORD=CHANGE_ME_REPLICATION_PASSWORD
+```
+
+`compose.yml`、`pg_hba.conf`、`.pgpass`、串流複寫、手動 promote、base backup 與舊 primary 重建流程維持相同。後續命令中出現的 `postgres:16-bookworm` 代表所選資料庫 image；使用本例時改成 `pgvector/pgvector:pg17`。
+
+衍生 image 需保留官方 PostgreSQL image 的入口程式、`postgres` 使用者、`PGDATA` 目錄與 `postgres` server command。primary 與 standby 需使用相同大版本及相同 extension image。PostgreSQL 16 與 PostgreSQL 17 使用不同的資料目錄格式；變更大版本需另行執行 major upgrade。
+
+查看 pgvector image digest：
+
+```bash
+docker pull pgvector/pgvector:pg17
+docker image inspect pgvector/pgvector:pg17 \
+  --format '{{json .RepoDigests}}'
+```
+
 ### 3.2 `.pgpass`
 
 建立 `/opt/postgresql/.pgpass`：
@@ -890,23 +910,23 @@ ORDER BY name;
 
 ### 10.2 使用 pgvector image
 
-兩台主機將 `.env` 的 image 改為同一個 pgvector 版本：
+第 3.1 節已示範以 PostgreSQL 17 的 pgvector image 執行同一套 Compose：
 
 ```dotenv
-POSTGRES_IMAGE=pgvector/pgvector:0.8.2-pg16-bookworm
+POSTGRES_IMAGE=pgvector/pgvector:pg17
 POSTGRES_PASSWORD=CHANGE_ME_POSTGRES_PASSWORD
 REPLICATION_PASSWORD=CHANGE_ME_REPLICATION_PASSWORD
 ```
 
-拉取 image 並查看 digest：
+`pgvector/pgvector:pg17` 在官方 PostgreSQL 17 image 上加入 pgvector，並沿用相同的環境變數、資料目錄、入口程式與 server command。本文的主備建立、切換與重建命令可直接套用。執行一次性 `docker run` 命令時，image 也需改成 `pgvector/pgvector:pg17`。
+
+兩台主機拉取相同 tag 並確認 digest：
 
 ```bash
-docker pull pgvector/pgvector:0.8.2-pg16-bookworm
-docker image inspect pgvector/pgvector:0.8.2-pg16-bookworm \
+docker pull pgvector/pgvector:pg17
+docker image inspect pgvector/pgvector:pg17 \
   --format '{{json .RepoDigests}}'
 ```
-
-`pgvector/pgvector` image 沿用官方 PostgreSQL image 的環境變數、資料目錄與入口方式。第 3 節的 Compose 設定可直接使用。
 
 ### 10.3 既有單實例已使用 pgvector
 
