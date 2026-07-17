@@ -1,6 +1,6 @@
 # PostgreSQL 兩主機 HA 實驗
 
-本倉庫包含三套 PostgreSQL 16 主備與高可用實驗、三種區域網路部署範本、兩套單機 Docker Compose 演示及一套分主機 Compose 範例。
+本倉庫包含 PostgreSQL 16 與 17 的主備、高可用及 TDE 實驗，並提供區域網路部署範本、Docker Compose 演示與分主機範例。
 
 ## 狀態
 
@@ -9,8 +9,9 @@
 | Patroni | PostgreSQL、Patroni、三成員 etcd、HAProxy | 完成 | `make patroni-test` |
 | Pacemaker | PostgreSQL、Corosync、Pacemaker、PAF、STONITH、VIP | 完成 | `make pcmk-test` |
 | Manual | PostgreSQL streaming replication、手動 promote、pg_basebackup rejoin | 完成 | `make manual-test`、`make manual-demo-test` |
+| TDE Manual | Percona PostgreSQL 17、pg_tde、pgvector、OpenBao、encrypted WAL、手動 promote | 完成 | `make tde-demo-test` |
 
-`make test-all` 執行三套驗證。
+`make test-all` 執行 Patroni、Pacemaker、Manual 與 TDE 驗證。
 
 ## 目錄
 
@@ -27,8 +28,41 @@
 | `standalone-compose-example/` | 可分別複製到三台主機的 Patroni Compose 檔 |
 | `demo/` | Patroni 單一 Docker daemon 演示環境 |
 | `manual-demo/` | 雙節點手動切換 Compose 演示及繁體中文 README |
+| `tde-demo/` | pg_tde、pgvector、OpenBao、WAL encryption 與手動切換 Compose 實驗 |
 | `manual-postgresql-primary-standby.zh-Hant.md` | 兩台實機與 containerlab 手動切換指南 |
 | `postgresql-manual-primary-standby-docker-compose.zh-Hant.md` | 不依賴倉庫工具的 Docker Compose 雙機主備完整操作手冊，包含由零建立、單實例擴展、切換、重建與 extension/pgvector 注意事項 |
+| `tde-postgresql-primary-standby-docker-compose.zh-Hant.md` | Percona PostgreSQL 17、pg_tde、pgvector、外部 OpenBao 與雙機手動主備部署手冊 |
+
+## TDE Docker Compose 實驗
+
+`tde-demo/compose.yml` 在單一 Docker daemon 內啟動 OpenBao、pg1 與 pg2。資料表使用 `tde_heap`，WAL 使用 AES-256，向量索引使用 pgvector HNSW。
+
+完整驗證：
+
+```bash
+make tde-demo-test
+```
+
+查看狀態：
+
+```bash
+make tde-demo-status
+```
+
+單獨執行 promote 與 rejoin：
+
+```bash
+make tde-demo-promote NODE=pg2
+make tde-demo-rejoin NODE=pg1
+```
+
+清除容器、網路、OpenBao dev key state 與 PostgreSQL volume：
+
+```bash
+make tde-demo-clean
+```
+
+實驗說明位於 [`tde-demo/README.md`](tde-demo/README.md)。實機部署流程位於 [`tde-postgresql-primary-standby-docker-compose.zh-Hant.md`](tde-postgresql-primary-standby-docker-compose.zh-Hant.md)。
 
 ## Docker-only 演示
 

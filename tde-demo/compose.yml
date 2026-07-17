@@ -1,0 +1,149 @@
+name: pgsql-tde-demo
+
+x-postgres-common: &postgres-common
+  image: ${PERCONA_POSTGRES_IMAGE}
+  restart: unless-stopped
+  environment:
+    POSTGRES_DB: ${POSTGRES_DB}
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
+    POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=trust
+    PGDATA: /data/db
+  command:
+    - postgres
+    - -c
+    - shared_preload_libraries=pg_tde
+    - -c
+    - pg_tde.cipher=aes_256
+    - -c
+    - listen_addresses=*
+    - -c
+    - hba_file=/etc/postgresql/pg_hba.conf
+    - -c
+    - password_encryption=scram-sha-256
+    - -c
+    - wal_level=replica
+    - -c
+    - max_wal_senders=10
+    - -c
+    - max_replication_slots=10
+    - -c
+    - hot_standby=on
+    - -c
+    - wal_keep_size=512MB
+  volumes:
+    - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    - tde-secrets:/run/pg-tde-secrets:ro
+  networks:
+    tde:
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+    interval: 3s
+    timeout: 3s
+    retries: 30
+    start_period: 10s
+
+services:
+  openbao:
+    image: ${OPENBAO_IMAGE}
+    container_name: pgsql-tde-openbao
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_DEV_ROOT_TOKEN}
+      BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    command:
+      - server
+      - -dev
+      - -dev-root-token-id=${OPENBAO_DEV_ROOT_TOKEN}
+      - -dev-listen-address=0.0.0.0:8200
+    ports:
+      - "${OPENBAO_PORT}:8200"
+    networks:
+      tde:
+        ipv4_address: 172.31.123.10
+    healthcheck:
+      test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  openbao-init:
+    image: ${OPENBAO_IMAGE}
+    container_name: pgsql-tde-openbao-init
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    environment:
+      BAO_ADDR: http://openbao:8200
+      BAO_TOKEN: ${OPENBAO_DEV_ROOT_TOKEN}
+    command:
+      - |
+        bao secrets enable -path=tde -version=2 kv 2>/dev/null || true
+        bao policy write pg-tde /config/openbao-pg-tde-policy.hcl
+        umask 077
+        bao token create \
+          -policy=pg-tde \
+          -orphan \
+          -ttl=24h \
+          -field=token \
+          > /secrets/openbao-token
+        chmod 0444 /secrets/openbao-token
+        bao secrets list
+    depends_on:
+      openbao:
+        condition: service_healthy
+    volumes:
+      - ./openbao-pg-tde-policy.hcl:/config/openbao-pg-tde-policy.hcl:ro
+      - tde-secrets:/secrets
+    networks:
+      tde:
+
+  pg1:
+    <<: *postgres-common
+    container_name: pgsql-tde-pg1
+    depends_on:
+      openbao-init:
+        condition: service_completed_successfully
+    ports:
+      - "${PG1_PORT}:5432"
+    volumes:
+      - pg1-data:/data/db
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./init-primary.sh:/docker-entrypoint-initdb.d/10-init-primary.sh:ro
+      - tde-secrets:/run/pg-tde-secrets:ro
+    networks:
+      tde:
+        ipv4_address: 172.31.123.11
+
+  pg2:
+    <<: *postgres-common
+    container_name: pgsql-tde-pg2
+    depends_on:
+      openbao-init:
+        condition: service_completed_successfully
+    ports:
+      - "${PG2_PORT}:5432"
+    volumes:
+      - pg2-data:/data/db
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - tde-secrets:/run/pg-tde-secrets:ro
+    networks:
+      tde:
+        ipv4_address: 172.31.123.12
+
+volumes:
+  pg1-data:
+    name: pgsql-tde-demo-pg1-data
+  pg2-data:
+    name: pgsql-tde-demo-pg2-data
+  tde-secrets:
+    name: pgsql-tde-demo-secrets
+
+networks:
+  tde:
+    name: pgsql-tde-demo-network
+    ipam:
+      config:
+        - subnet: 172.31.123.0/24

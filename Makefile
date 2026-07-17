@@ -10,6 +10,7 @@ DEMO_COMPOSE = docker compose -f demo/compose.yml
 	pcmk-up pcmk-status pcmk-smoke pcmk-failover pcmk-test pcmk-down pcmk-clean \
 	manual-up manual-status manual-smoke manual-switch manual-promote manual-rejoin manual-failover manual-test manual-down manual-clean \
 	manual-demo-lint manual-demo-up manual-demo-status manual-demo-smoke manual-demo-switch manual-demo-promote manual-demo-rejoin manual-demo-failover manual-demo-test manual-demo-down manual-demo-clean \
+	tde-demo-lint tde-demo-up tde-demo-status tde-demo-smoke tde-demo-promote tde-demo-rejoin tde-demo-failover tde-demo-test tde-demo-down tde-demo-clean \
 	test-all status-all clean-all deploy-lint \
 	demo-up demo-status demo-failover demo-rejoin demo-down demo-clean
 
@@ -137,11 +138,46 @@ manual-demo-down:
 manual-demo-clean:
 	bash scripts/manual-demo-clean.sh
 
-status-all: patroni-status pcmk-status manual-status
+tde-demo-lint:
+	bash tests/tde-demo-static.sh
 
-test-all: patroni-test pcmk-test manual-test
+tde-demo-up:
+	bash scripts/tde-demo-up.sh
 
-clean-all: patroni-clean pcmk-clean manual-clean
+tde-demo-status:
+	bash scripts/tde-demo-status.sh
+
+tde-demo-smoke:
+	bash tests/tde-demo-smoke.sh
+
+tde-demo-promote:
+	@test -n "$(NODE)" || (echo 'usage: make tde-demo-promote NODE=pg2' >&2; exit 1)
+	bash scripts/tde-demo-promote.sh "$(NODE)"
+
+tde-demo-rejoin:
+	@test -n "$(NODE)" || (echo 'usage: make tde-demo-rejoin NODE=pg1' >&2; exit 1)
+	bash scripts/tde-demo-rejoin.sh "$(NODE)"
+
+tde-demo-failover:
+	bash tests/tde-demo-failover.sh
+
+tde-demo-test: tde-demo-lint
+	bash scripts/tde-demo-clean.sh
+	bash scripts/tde-demo-up.sh
+	bash tests/tde-demo-smoke.sh
+	bash tests/tde-demo-failover.sh
+
+tde-demo-down:
+	bash scripts/tde-demo-down.sh
+
+tde-demo-clean:
+	bash scripts/tde-demo-clean.sh
+
+status-all: patroni-status pcmk-status manual-status tde-demo-status
+
+test-all: patroni-test pcmk-test manual-test tde-demo-test
+
+clean-all: patroni-clean pcmk-clean manual-clean tde-demo-clean
 
 deploy-lint:
 	bash tests/deploy-templates.sh
