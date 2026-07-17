@@ -28,6 +28,7 @@
 | `demo/` | Patroni 單一 Docker daemon 演示環境 |
 | `manual-demo/` | 雙節點手動切換 Compose 演示及繁體中文 README |
 | `manual-postgresql-primary-standby.zh-Hant.md` | 兩台實機與 containerlab 手動切換指南 |
+| `postgresql-manual-primary-standby-docker-compose.zh-Hant.md` | 不依賴倉庫工具的 Docker Compose 雙機主備完整操作手冊，包含由零建立、單實例擴展、切換、重建與 extension/pgvector 注意事項 |
 
 ## Docker-only 演示
 
