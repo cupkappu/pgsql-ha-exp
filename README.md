@@ -9,9 +9,10 @@
 | Patroni | PostgreSQL、Patroni、三成員 etcd、HAProxy | 完成 | `make patroni-test` |
 | Pacemaker | PostgreSQL、Corosync、Pacemaker、PAF、STONITH、VIP | 完成 | `make pcmk-test` |
 | Manual | PostgreSQL streaming replication、手動 promote、pg_basebackup rejoin | 完成 | `make manual-test`、`make manual-demo-test` |
-| TDE Manual | Percona PostgreSQL 17、pg_tde、pgvector、OpenBao、encrypted WAL、手動 promote | 完成 | `make tde-demo-test` |
+| TDE OpenBao | Percona PostgreSQL 17、pg_tde、pgvector、OpenBao、encrypted WAL、手動 promote | 完成 | `make tde-demo-test` |
+| TDE Local Keyring | Percona PostgreSQL 17、pg_tde、pgvector、本機 keyring、離線備份、手動 promote | 完成 | `make tde-local-demo-test` |
 
-`make test-all` 執行 Patroni、Pacemaker、Manual 與 TDE 驗證。
+`make test-all` 執行 Patroni、Pacemaker、Manual、TDE OpenBao 與 TDE Local Keyring 驗證。
 
 ## 目錄
 
@@ -29,9 +30,11 @@
 | `demo/` | Patroni 單一 Docker daemon 演示環境 |
 | `manual-demo/` | 雙節點手動切換 Compose 演示及繁體中文 README |
 | `tde-demo/` | pg_tde、pgvector、OpenBao、WAL encryption 與手動切換 Compose 實驗 |
+| `tde-local-demo/` | pg_tde、pgvector、本機 keyring、獨立副本、離線恢復與手動切換 Compose 實驗 |
 | `manual-postgresql-primary-standby.zh-Hant.md` | 兩台實機與 containerlab 手動切換指南 |
 | `postgresql-manual-primary-standby-docker-compose.zh-Hant.md` | 不依賴倉庫工具的 Docker Compose 雙機主備完整操作手冊，包含由零建立、單實例擴展、切換、重建與 extension/pgvector 注意事項 |
 | `tde-postgresql-primary-standby-docker-compose.zh-Hant.md` | Percona PostgreSQL 17、pg_tde、pgvector、外部 OpenBao 與雙機手動主備部署手冊 |
+| `tde-local-keyring-postgresql-primary-standby-docker-compose.zh-Hant.md` | Percona PostgreSQL 17、pg_tde、pgvector、本機 keyring、LUKS、離線備份與雙機手動主備部署手冊 |
 
 ## TDE Docker Compose 實驗
 
@@ -63,6 +66,43 @@ make tde-demo-clean
 ```
 
 實驗說明位於 [`tde-demo/README.md`](tde-demo/README.md)。實機部署流程位於 [`tde-postgresql-primary-standby-docker-compose.zh-Hant.md`](tde-postgresql-primary-standby-docker-compose.zh-Hant.md)。
+
+## TDE 本機 Keyring 實驗
+
+`tde-local-demo/compose.yml` 不啟動外部 KMS。pg1、pg2 與備份 volume 各自保存一份 keyring。初始化及 rejoin 期間執行顯式同步。
+
+完整驗證：
+
+```bash
+make tde-local-demo-test
+```
+
+查看角色、extension、加密狀態與三份 keyring checksum：
+
+```bash
+make tde-local-demo-status
+```
+
+手動 promote 與 rejoin：
+
+```bash
+make tde-local-demo-promote NODE=pg2
+make tde-local-demo-rejoin NODE=pg1
+```
+
+驗證 keyring 遺失與離線副本恢復：
+
+```bash
+make tde-local-demo-keyring-restore
+```
+
+清除容器、網路、PGDATA、節點 keyring 與備份 keyring：
+
+```bash
+make tde-local-demo-clean
+```
+
+實驗說明位於 [`tde-local-demo/README.md`](tde-local-demo/README.md)。LUKS 與雙機部署流程位於 [`tde-local-keyring-postgresql-primary-standby-docker-compose.zh-Hant.md`](tde-local-keyring-postgresql-primary-standby-docker-compose.zh-Hant.md)。
 
 ## Docker-only 演示
 

@@ -133,10 +133,10 @@ tde_demo_data_initialized() {
   volume="$(tde_demo_volume "$1")"
   docker volume inspect "$volume" >/dev/null 2>&1 || return 1
   docker run --rm \
-    -v "${volume}:/data:ro" \
+    -v "${volume}:/check:ro" \
     --entrypoint test \
     "$PERCONA_POSTGRES_IMAGE" \
-    -f /data/PG_VERSION >/dev/null 2>&1
+    -f /check/PG_VERSION >/dev/null 2>&1
 }
 
 tde_demo_slot_name() {

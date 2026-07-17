@@ -11,6 +11,7 @@ DEMO_COMPOSE = docker compose -f demo/compose.yml
 	manual-up manual-status manual-smoke manual-switch manual-promote manual-rejoin manual-failover manual-test manual-down manual-clean \
 	manual-demo-lint manual-demo-up manual-demo-status manual-demo-smoke manual-demo-switch manual-demo-promote manual-demo-rejoin manual-demo-failover manual-demo-test manual-demo-down manual-demo-clean \
 	tde-demo-lint tde-demo-up tde-demo-status tde-demo-smoke tde-demo-promote tde-demo-rejoin tde-demo-failover tde-demo-test tde-demo-down tde-demo-clean \
+	tde-local-demo-lint tde-local-demo-up tde-local-demo-status tde-local-demo-smoke tde-local-demo-promote tde-local-demo-rejoin tde-local-demo-failover tde-local-demo-keyring-restore tde-local-demo-test tde-local-demo-down tde-local-demo-clean \
 	test-all status-all clean-all deploy-lint \
 	demo-up demo-status demo-failover demo-rejoin demo-down demo-clean
 
@@ -173,11 +174,50 @@ tde-demo-down:
 tde-demo-clean:
 	bash scripts/tde-demo-clean.sh
 
-status-all: patroni-status pcmk-status manual-status tde-demo-status
+tde-local-demo-lint:
+	bash tests/tde-local-demo-static.sh
 
-test-all: patroni-test pcmk-test manual-test tde-demo-test
+tde-local-demo-up:
+	bash scripts/tde-local-demo-up.sh
 
-clean-all: patroni-clean pcmk-clean manual-clean tde-demo-clean
+tde-local-demo-status:
+	bash scripts/tde-local-demo-status.sh
+
+tde-local-demo-smoke:
+	bash tests/tde-local-demo-smoke.sh
+
+tde-local-demo-promote:
+	@test -n "$(NODE)" || (echo 'usage: make tde-local-demo-promote NODE=pg2' >&2; exit 1)
+	bash scripts/tde-local-demo-promote.sh "$(NODE)"
+
+tde-local-demo-rejoin:
+	@test -n "$(NODE)" || (echo 'usage: make tde-local-demo-rejoin NODE=pg1' >&2; exit 1)
+	bash scripts/tde-local-demo-rejoin.sh "$(NODE)"
+
+tde-local-demo-failover:
+	bash tests/tde-local-demo-failover.sh
+
+tde-local-demo-keyring-restore:
+	bash tests/tde-local-demo-keyring-restore.sh
+
+tde-local-demo-test: tde-local-demo-lint
+	bash scripts/tde-local-demo-clean.sh
+	bash scripts/tde-local-demo-up.sh
+	bash tests/tde-local-demo-smoke.sh
+	bash tests/tde-local-demo-failover.sh
+	bash tests/tde-local-demo-keyring-restore.sh
+
+tde-local-demo-down:
+	bash scripts/tde-local-demo-down.sh
+
+tde-local-demo-clean:
+	bash scripts/tde-local-demo-clean.sh
+
+status-all: patroni-status pcmk-status manual-status tde-demo-status tde-local-demo-status
+
+test-all: patroni-test pcmk-test manual-test tde-demo-test tde-local-demo-test
+
+clean-all: patroni-clean pcmk-clean manual-clean tde-demo-clean tde-local-demo-clean
 
 deploy-lint:
 	bash tests/deploy-templates.sh

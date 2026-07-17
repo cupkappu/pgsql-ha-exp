@@ -1,0 +1,102 @@
+name: pgsql-tde-local-demo
+
+x-postgres-common: &postgres-common
+  image: ${PERCONA_POSTGRES_IMAGE}
+  restart: unless-stopped
+  environment:
+    POSTGRES_DB: ${POSTGRES_DB}
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
+    POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=trust
+    PGDATA: /data/db
+  command:
+    - postgres
+    - -c
+    - shared_preload_libraries=pg_tde
+    - -c
+    - pg_tde.cipher=aes_256
+    - -c
+    - listen_addresses=*
+    - -c
+    - hba_file=/etc/postgresql/pg_hba.conf
+    - -c
+    - password_encryption=scram-sha-256
+    - -c
+    - wal_level=replica
+    - -c
+    - max_wal_senders=10
+    - -c
+    - max_replication_slots=10
+    - -c
+    - hot_standby=on
+    - -c
+    - wal_keep_size=512MB
+  volumes:
+    - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+  networks:
+    tde-local:
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+    interval: 3s
+    timeout: 3s
+    retries: 30
+    start_period: 10s
+
+services:
+  pg1:
+    <<: *postgres-common
+    container_name: pgsql-tde-local-pg1
+    ports:
+      - "${PG1_PORT}:5432"
+    volumes:
+      - pg1-data:/data/db
+      - pg1-keyring:/run/pg-tde-keyring
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./init-primary.sh:/docker-entrypoint-initdb.d/10-init-primary.sh:ro
+    networks:
+      tde-local:
+        ipv4_address: 172.31.124.11
+
+  pg2:
+    <<: *postgres-common
+    container_name: pgsql-tde-local-pg2
+    ports:
+      - "${PG2_PORT}:5432"
+    volumes:
+      - pg2-data:/data/db
+      - pg2-keyring:/run/pg-tde-keyring
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    networks:
+      tde-local:
+        ipv4_address: 172.31.124.12
+
+  keyring-backup:
+    image: ${PERCONA_POSTGRES_IMAGE}
+    container_name: pgsql-tde-local-keyring-backup
+    profiles: ["tools"]
+    restart: "no"
+    entrypoint: ["/usr/bin/true"]
+    volumes:
+      - keyring-backup:/backup
+    networks:
+      tde-local:
+
+volumes:
+  pg1-data:
+    name: pgsql-tde-local-demo-pg1-data
+  pg2-data:
+    name: pgsql-tde-local-demo-pg2-data
+  pg1-keyring:
+    name: pgsql-tde-local-demo-pg1-keyring
+  pg2-keyring:
+    name: pgsql-tde-local-demo-pg2-keyring
+  keyring-backup:
+    name: pgsql-tde-local-demo-keyring-backup
+
+networks:
+  tde-local:
+    name: pgsql-tde-local-demo-network
+    ipam:
+      config:
+        - subnet: 172.31.124.0/24

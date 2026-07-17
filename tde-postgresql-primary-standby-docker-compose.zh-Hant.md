@@ -2,6 +2,8 @@
 
 本文使用 Percona Distribution for PostgreSQL 17、pg_tde、pgvector、OpenBao KV v2、Docker Compose 與 physical streaming replication 建立雙機主備。
 
+本機 keyring、LUKS 與離線備份方案位於 [`tde-local-keyring-postgresql-primary-standby-docker-compose.zh-Hant.md`](tde-local-keyring-postgresql-primary-standby-docker-compose.zh-Hant.md)。
+
 本文涵蓋：
 
 1. 外部 OpenBao 準備。
